@@ -41,11 +41,7 @@ func (svc *Service) CreateBatch(code, species string) (*model.ShellBatch, error)
 
 // GetBatch 读取批次。
 func (svc *Service) GetBatch(id int64) (*model.ShellBatch, error) {
-	b, err := svc.store.GetBatch(id)
-	if err != nil {
-		return nil, fmt.Errorf("service: get batch: %v", err)
-	}
-	return b, nil
+	return svc.store.GetBatch(id)
 }
 
 // ListBatches 列出全部批次。

@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"errors"
 
+	"task277-shellband/internal/model"
 	"task277-shellband/internal/service"
 	"task277-shellband/internal/store"
 )
@@ -54,5 +56,27 @@ func TestStatsEmpty(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("stats=%d", rec.Code)
+	}
+}
+
+func TestGetBatchNotFound(t *testing.T) {
+	srv := newServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/batches/99999", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d, want 404; body=%s", rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["error"] != "NOT_FOUND" {
+		t.Fatalf("error=%v, want NOT_FOUND", got["error"])
+	}
+
+	// 直接断言 service 层哨兵，确保调用方可按缺失批次处理。
+	if _, err := srv.svc.GetBatch(99999); !errors.Is(err, model.ErrBatchNotFound) {
+		t.Fatalf("GetBatch err=%v, want ErrBatchNotFound", err)
 	}
 }

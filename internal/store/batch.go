@@ -104,7 +104,7 @@ func scanBatch(scanner interface {
 	)
 	if err := scanner.Scan(&id, &code, &species, &status, &createdAt, &sealedAt); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("store: scan batch: %v", model.ErrBatchNotFound)
+			return nil, model.ErrBatchNotFound
 		}
 		return nil, fmt.Errorf("store: scan batch: %w", err)
 	}
