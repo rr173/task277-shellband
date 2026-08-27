@@ -343,8 +343,14 @@ func (svc *Service) BuildSnapshot(batchID int64, publish bool) (*model.SeasonalS
 	return svc.store.CreateSnapshot(snap)
 }
 
-// ListSnapshots 列出批次全部快照。
+// refreshSnapshotFromLive 用“当前活体数据”重建快照载荷，使其作为可刷新的工作预览。
+// 仅对草稿快照生效：已发布 / 已替代快照为不可变历史记录，必须保持发布当时的序列，
+// 即便其后又补了采样、重新对齐，载荷也不得跟随最新对齐变动，故直接返回库中存档载荷。
 func (svc *Service) refreshSnapshotFromLive(snap *model.SeasonalSnapshot) error {
+	if snap.Status != model.SnapshotDraft {
+		// 非草稿快照不可变，保留发布当时落库的载荷。
+		return nil
+	}
 	b, err := svc.store.GetBatch(snap.BatchID)
 	if err != nil {
 		return err
@@ -381,6 +387,9 @@ func (svc *Service) refreshSnapshotFromLive(snap *model.SeasonalSnapshot) error 
 	return nil
 }
 
+// ListSnapshots 列出批次全部快照。
+// 已发布 / 已替代快照返回发布当时落库的存档载荷（不可变）；
+// 草稿快照用当前活体数据重建载荷，作为可刷新的工作预览。
 func (svc *Service) ListSnapshots(batchID int64) ([]*model.SeasonalSnapshot, error) {
 	snaps, err := svc.store.ListSnapshots(batchID)
 	if err != nil {
