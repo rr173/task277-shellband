@@ -63,12 +63,10 @@ func (s *Store) GetSnapshot(id int64) (*model.SeasonalSnapshot, error) {
 }
 
 // ListSnapshots 按版本升序列出批次全部快照。
+//
+// 直接查库，不缓存：发布会新增/改写 seasonal_snapshots 行，缓存会让后续发布
+// 仍只返回首版（曾经出现的缺陷），故每次实时读取以保证一致性。
 func (s *Store) ListSnapshots(batchID int64) ([]*model.SeasonalSnapshot, error) {
-	s.snapMu.Lock()
-	defer s.snapMu.Unlock()
-	if cached, ok := s.snapCache[batchID]; ok {
-		return cached, nil
-	}
 	rows, err := s.DB.Query(
 		`SELECT id, batch_id, version, status, sealed, payload, created_at
 		 FROM seasonal_snapshots WHERE batch_id=? ORDER BY version ASC, id ASC`, batchID)
@@ -87,7 +85,6 @@ func (s *Store) ListSnapshots(batchID int64) ([]*model.SeasonalSnapshot, error) 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	s.snapCache[batchID] = out
 	return out, nil
 }
 

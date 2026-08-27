@@ -5,18 +5,13 @@ package store
 import (
 	"database/sql"
 	"fmt"
-	"sync"
-
-	"task277-shellband/internal/model"
 
 	_ "modernc.org/sqlite"
 )
 
 // Store 封装 SQLite 连接与所有持久化操作。
 type Store struct {
-	DB        *sql.DB
-	snapMu    sync.Mutex
-	snapCache map[int64][]*model.SeasonalSnapshot
+	DB *sql.DB
 }
 
 // Open 打开（或创建）SQLite 数据库文件并完成迁移。
@@ -37,7 +32,7 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("store: ping sqlite: %w", err)
 	}
-	s := &Store{DB: db, snapCache: map[int64][]*model.SeasonalSnapshot{}}
+	s := &Store{DB: db}
 	if err := s.Migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
