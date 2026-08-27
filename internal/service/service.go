@@ -290,12 +290,32 @@ func (svc *Service) BuildSnapshot(batchID int64, publish bool) (*model.SeasonalS
 	svc.serialMu.Lock()
 	defer svc.serialMu.Unlock()
 
-	b, _ := svc.store.GetBatch(batchID)
-	bands, _ := svc.store.ListBands(batchID)
-	samples, _ := svc.store.ListSamples(batchID)
-	alignments, _ := svc.store.ListAlignments(batchID)
-	verdicts, _ := svc.store.ListVerdicts(batchID)
-	anchors, _ := svc.store.ListAnchors(batchID)
+	// 批次必须存在：快照载荷依赖批次编码/创建时间/状态。
+	// 若批次不存在，错误不可忽略，否则后续 BuildPayload 解引用空指针会 panic。
+	b, err := svc.store.GetBatch(batchID)
+	if err != nil {
+		return nil, err
+	}
+	bands, err := svc.store.ListBands(batchID)
+	if err != nil {
+		return nil, err
+	}
+	samples, err := svc.store.ListSamples(batchID)
+	if err != nil {
+		return nil, err
+	}
+	alignments, err := svc.store.ListAlignments(batchID)
+	if err != nil {
+		return nil, err
+	}
+	verdicts, err := svc.store.ListVerdicts(batchID)
+	if err != nil {
+		return nil, err
+	}
+	anchors, err := svc.store.ListAnchors(batchID)
+	if err != nil {
+		return nil, err
+	}
 	payload, err := snapshot.BuildPayload(b, bands, samples, alignments, verdicts, anchors)
 	if err != nil {
 		return nil, err
