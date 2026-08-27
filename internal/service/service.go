@@ -354,6 +354,9 @@ func (svc *Service) GetSnapshot(id int64) (*model.SeasonalSnapshot, error) {
 }
 
 // PublishSnapshot 将已有草稿快照发布（先替代已发布者）。
+// 发布必须把草稿变成已发布，且不能把草稿直接标成替代：
+// SupersedePublished 只改已发布快照，随后再把草稿置为已发布。
+// 若草稿在上一步被意外改写或已不在草稿态，发布视为未生效并报错，避免“说成功却没发布”。
 func (svc *Service) PublishSnapshot(id int64) error {
 	svc.serialMu.Lock()
 	defer svc.serialMu.Unlock()
@@ -364,17 +367,23 @@ func (svc *Service) PublishSnapshot(id int64) error {
 	if snap.Status == model.SnapshotPublished {
 		return nil
 	}
+	if snap.Status != model.SnapshotDraft {
+		return model.NewDomainError("NOT_DRAFT",
+			fmt.Sprintf("snapshot %d is %s, only draft can be published", id, snap.Status), nil)
+	}
+	// 仅替代当前已发布快照，草稿与已替代者保持原状。
 	if err := svc.store.SupersedePublished(snap.BatchID); err != nil {
 		return err
 	}
-	// 直接更新状态为 published（保持版本号不变）。
-	res, err := svc.store.DB.Exec(
-		`UPDATE seasonal_snapshots SET status=? WHERE id=? AND status=?`,
-		string(model.SnapshotPublished), id, string(model.SnapshotDraft))
+	// 将草稿置为已发布；若因并发等原因草稿已非草稿态，发布未生效，必须报错而非谎报成功。
+	published, err := svc.store.PublishDraft(id)
 	if err != nil {
-		return fmt.Errorf("service: publish snapshot: %w", err)
+		return err
 	}
-	_, _ = res.RowsAffected()
+	if !published {
+		return model.NewDomainError("NOT_PUBLISHED",
+			fmt.Sprintf("snapshot %d was not published (no longer draft)", id), nil)
+	}
 	return nil
 }
 

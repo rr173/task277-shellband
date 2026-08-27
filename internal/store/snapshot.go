@@ -18,11 +18,13 @@ func (s *Store) NextSnapshotVersion(batchID int64) (int, error) {
 	return cur + 1, nil
 }
 
-// SupersedePublished 将批次已发布的快照置为“替代”。
+// SupersedePublished 将批次当前已发布的快照置为“替代”。
+// 仅作用于 status=published 的快照，绝不改动草稿或已被替代的快照——
+// 否则会把待发布的草稿一起标成替代，导致发布后草稿既未发布也未保留。
 func (s *Store) SupersedePublished(batchID int64) error {
 	if _, err := s.DB.Exec(
-		`UPDATE seasonal_snapshots SET status=? WHERE batch_id=?`,
-		string(model.SnapshotSuperseded), batchID); err != nil {
+		`UPDATE seasonal_snapshots SET status=? WHERE batch_id=? AND status=?`,
+		string(model.SnapshotSuperseded), batchID, string(model.SnapshotPublished)); err != nil {
 		return fmt.Errorf("store: supersede published: %w", err)
 	}
 	return nil
@@ -53,6 +55,23 @@ func (s *Store) CreateSnapshot(snap *model.SeasonalSnapshot) (*model.SeasonalSna
 	}
 	id, _ := res.LastInsertId()
 	return s.GetSnapshot(id)
+}
+
+// PublishDraft 将指定草稿快照置为“发布”。
+// 仅当该快照当前仍为草稿时才更新，避免与上一步 SupersedePublished 之间产生竞争
+// （例如草稿已被替代则不发布）。返回是否有快照被发布，便于上层据此判定真正发布成功。
+func (s *Store) PublishDraft(id int64) (bool, error) {
+	res, err := s.DB.Exec(
+		`UPDATE seasonal_snapshots SET status=? WHERE id=? AND status=?`,
+		string(model.SnapshotPublished), id, string(model.SnapshotDraft))
+	if err != nil {
+		return false, fmt.Errorf("store: publish draft: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("store: publish draft rows: %w", err)
+	}
+	return n > 0, nil
 }
 
 // GetSnapshot 按 ID 读取快照（payload 一并返回）。
