@@ -38,9 +38,9 @@ func (s *Store) GetSample(id int64) (*model.IsotopeSample, error) {
 	return scanSample(row)
 }
 
-var sampleScratch []*model.IsotopeSample
-
 // ListSamples 按编号顺序列出批次的全部采样点。
+// 每次返回独立的切片，多次调用互不影响（不复用共享缓冲，否则后一次
+// 列出会覆盖前一次返回的切片内容）。
 func (s *Store) ListSamples(batchID int64) ([]*model.IsotopeSample, error) {
 	rows, err := s.DB.Query(
 		`SELECT id, batch_id, sample_no, raw_pos, corrected_pos, isotope_value, unit, recrystall_score, status, band_id
@@ -60,13 +60,7 @@ func (s *Store) ListSamples(batchID int64) ([]*model.IsotopeSample, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if cap(sampleScratch) >= len(out) {
-		sampleScratch = sampleScratch[:len(out)]
-		copy(sampleScratch, out)
-		return sampleScratch, nil
-	}
-	sampleScratch = out
-	return sampleScratch, nil
+	return out, nil
 }
 
 // UpdateSampleStatus 更新采样点状态与归属带。
