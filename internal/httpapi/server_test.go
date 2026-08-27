@@ -56,3 +56,28 @@ func TestStatsEmpty(t *testing.T) {
 		t.Fatalf("stats=%d", rec.Code)
 	}
 }
+
+func TestCreateBatchDuplicateCodeConflicts(t *testing.T) {
+	srv := newServer(t)
+	body := strings.NewReader(`{"code":"HTTP-DUP","species":"Pecten"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/batches", body)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("first create=%d body=%s", rec.Code, rec.Body.String())
+	}
+	// 重复编码必须按冲突（409）返回，而非内部错误（500）。
+	req = httptest.NewRequest(http.MethodPost, "/api/batches", strings.NewReader(`{"code":"HTTP-DUP","species":"Pecten"}`))
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate code: want %d, got %d body=%s", http.StatusConflict, rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["error"] != "CONFLICT" {
+		t.Fatalf("error code: want CONFLICT, got %v", got["error"])
+	}
+}

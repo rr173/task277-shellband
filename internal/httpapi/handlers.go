@@ -35,9 +35,9 @@ func mapError(err error) (int, string, string) {
 		errors.Is(err, model.ErrAnchorNotFound),
 		errors.Is(err, model.ErrSnapshotNotFound):
 		return http.StatusNotFound, "NOT_FOUND", err.Error()
-	case err == model.ErrDuplicateCode,
-		err == model.ErrSampleNoConflict,
-		err == model.ErrAnchorConflict:
+	case errors.Is(err, model.ErrDuplicateCode),
+		errors.Is(err, model.ErrSampleNoConflict),
+		errors.Is(err, model.ErrAnchorConflict):
 		return http.StatusConflict, "CONFLICT", err.Error()
 	case errors.Is(err, model.ErrPositionOrder),
 		errors.Is(err, model.ErrMissingUnit),

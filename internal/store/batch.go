@@ -19,9 +19,9 @@ func (s *Store) CreateBatch(code, species string) (*model.ShellBatch, error) {
 		code, species, string(model.BatchReceiving), now)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return nil, fmt.Errorf("store: duplicate code: %v", model.ErrDuplicateCode)
+			return nil, model.ErrDuplicateCode
 		}
-		return nil, fmt.Errorf("store: create batch: %v", err)
+		return nil, fmt.Errorf("store: create batch: %w", err)
 	}
 	id, _ := res.LastInsertId()
 	return s.GetBatch(id)

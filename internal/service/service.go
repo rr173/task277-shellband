@@ -38,7 +38,7 @@ func (svc *Service) CreateBatch(code, species string) (*model.ShellBatch, error)
 	}
 	b, err := svc.store.CreateBatch(code, species)
 	if err != nil {
-		return nil, fmt.Errorf("service: create batch: %v", err)
+		return nil, fmt.Errorf("service: create batch: %w", err)
 	}
 	return b, nil
 }
