@@ -59,10 +59,33 @@ func (s *Store) ListAlignments(batchID int64) ([]*model.Alignment, error) {
 	return out, rows.Err()
 }
 
-// DeleteAlignments 删除批次全部归属关系（重对齐前清空）。
-func (s *Store) DeleteAlignments(batchID int64) error {
-	if _, err := s.DB.Exec(`DELETE FROM alignments WHERE batch_id=?`, batchID); err != nil {
-		return fmt.Errorf("store: delete alignments: %w", err)
+// DeleteStaleAlignments 删除批次中“不再属于给定 sample 集合”的旧归属关系。
+// 用于对齐时的覆盖式更新：先写入新归属（CreateAlignment 幂等），再调用本方法
+// 清理已被本轮对齐移出的旧记录，使任一时刻表内归属均完整、不为空。
+func (s *Store) DeleteStaleAlignments(batchID int64, keepSamples map[int64]bool) error {
+	if len(keepSamples) == 0 {
+		// 本轮无任何归属：清空旧归属即正确结果（该批次确实无对齐样本）。
+		if _, err := s.DB.Exec(`DELETE FROM alignments WHERE batch_id=?`, batchID); err != nil {
+			return fmt.Errorf("store: delete stale alignments: %w", err)
+		}
+		return nil
+	}
+	// 构造占位符列表：batch_id 限定范围，NOT IN 剔除保留集合。
+	ids := make([]interface{}, 0, len(keepSamples))
+	placeholders := ""
+	for sid := range keepSamples {
+		if placeholders != "" {
+			placeholders += ","
+		}
+		placeholders += "?"
+		ids = append(ids, sid)
+	}
+	args := append([]interface{}{batchID}, ids...)
+	q := fmt.Sprintf(
+		`DELETE FROM alignments WHERE batch_id=? AND sample_id NOT IN (%s)`,
+		placeholders)
+	if _, err := s.DB.Exec(q, args...); err != nil {
+		return fmt.Errorf("store: delete stale alignments: %w", err)
 	}
 	return nil
 }

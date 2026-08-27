@@ -197,8 +197,12 @@ func (svc *Service) ListCorrections(batchID int64) ([]*model.PositionCorrection,
 // ---- 对齐（全局串行）----
 
 // Align 将采样点对齐到生长带并诊断缺口；写回归属、带种类与采样状态。
-// 该操作全局串行，避免并发对齐破坏“一条样本仅归属一条带”的不变量。
+// 该操作全局串行，与 BuildSnapshot/PublishSnapshot 互斥，避免并发对齐
+// 在“清空旧归属→重写新归属”的窗口内被快照读取，导致已发布快照采样计数为零。
 func (svc *Service) Align(batchID int64) (*align.Result, error) {
+	svc.serialMu.Lock()
+	defer svc.serialMu.Unlock()
+
 	bands, err := svc.store.ListBands(batchID)
 	if err != nil {
 		return nil, err
@@ -213,16 +217,19 @@ func (svc *Service) Align(batchID int64) (*align.Result, error) {
 	}
 	res := align.Align(sec, samples)
 
-	// 清空旧归属，重对齐为幂等操作。
-	if err := svc.store.DeleteAlignments(batchID); err != nil {
-		return nil, err
-	}
-	time.Sleep(5 * time.Millisecond)
+	// 旧归属采用“先写后删”的覆盖式更新，避免清空→重写之间出现
+	// 归属为空的窗口被并发的快照读取到。先插入新归属（命中唯一约束即幂等更新），
+	// 再删除未在新归属中出现的旧记录，使任一时刻表内均有完整归属。
+	newAssign := map[int64]bool{}
 	for _, a := range res.Assignments {
 		asg := a
+		newAssign[asg.SampleID] = true
 		if err := svc.store.CreateAlignment(&asg); err != nil {
 			return nil, err
 		}
+	}
+	if err := svc.store.DeleteStaleAlignments(batchID, newAssign); err != nil {
+		return nil, err
 	}
 	for _, b := range sec.Bands {
 		kind := res.BandKind[b.ID]
@@ -283,8 +290,12 @@ func (svc *Service) ListVerdicts(batchID int64) ([]*model.PollutionVerdict, erro
 // ---- 季节快照 ----
 
 // BuildSnapshot 构造季节快照载荷并落库。publish=true 时先替代已发布快照再发布。
-// 该操作全局串行，与 Align 互斥，避免快照读取到半写状态。
+// 该操作全局串行，与 Align/PublishSnapshot 互斥，避免快照读取到对齐半写状态
+// 而产生采样计数为零的快照。
 func (svc *Service) BuildSnapshot(batchID int64, publish bool) (*model.SeasonalSnapshot, error) {
+	svc.serialMu.Lock()
+	defer svc.serialMu.Unlock()
+
 	b, err := svc.store.GetBatch(batchID)
 	if err != nil {
 		return nil, err
@@ -349,7 +360,11 @@ func (svc *Service) GetSnapshot(id int64) (*model.SeasonalSnapshot, error) {
 }
 
 // PublishSnapshot 将已有草稿快照发布（先替代已发布者）。
+// 该操作全局串行，与 Align/BuildSnapshot 互斥，避免发布与对齐互相踩踏。
 func (svc *Service) PublishSnapshot(id int64) error {
+	svc.serialMu.Lock()
+	defer svc.serialMu.Unlock()
+
 	snap, err := svc.store.GetSnapshot(id)
 	if err != nil {
 		return err
