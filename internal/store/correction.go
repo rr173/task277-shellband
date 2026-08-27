@@ -1,14 +1,11 @@
 package store
 
 import (
-	"database/sql"
 	"fmt"
 	"time"
 
 	"task277-shellband/internal/model"
 )
-
-var leakedCorrectionRows *sql.Rows
 
 // CreateCorrection 记录一条采样位置校正。
 func (s *Store) CreateCorrection(c *model.PositionCorrection) error {
@@ -24,6 +21,10 @@ func (s *Store) CreateCorrection(c *model.PositionCorrection) error {
 }
 
 // ListCorrections 列出批次全部位置校正（按时间）。
+//
+// 必须在返回前关闭 rows：连接池仅设为单连接（SetMaxOpenConns(1)），
+// 未关闭的 *sql.Rows 会一直占用唯一连接，导致后续任何查询（含全库
+// 统计 GlobalStats）永久阻塞。
 func (s *Store) ListCorrections(batchID int64) ([]*model.PositionCorrection, error) {
 	rows, err := s.DB.Query(
 		`SELECT id, batch_id, sample_id, raw_pos, corrected_pos, method, applied_at
@@ -31,9 +32,7 @@ func (s *Store) ListCorrections(batchID int64) ([]*model.PositionCorrection, err
 	if err != nil {
 		return nil, fmt.Errorf("store: list corrections: %w", err)
 	}
-	leakedCorrectionRows = rows
-	var held int
-	_ = s.DB.QueryRow(`SELECT COUNT(*) FROM position_corrections WHERE batch_id=?`, batchID).Scan(&held)
+	defer rows.Close()
 	var out []*model.PositionCorrection
 	for rows.Next() {
 		var (

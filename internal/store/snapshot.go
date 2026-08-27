@@ -83,8 +83,6 @@ func (s *Store) ListSnapshots(batchID int64) ([]*model.SeasonalSnapshot, error) 
 }
 
 // ListPublishedSnapshots 列出批次已发布快照。
-var leakedPublishedRows interface{ Close() error }
-
 func (s *Store) ListPublishedSnapshots(batchID int64) ([]*model.SeasonalSnapshot, error) {
 	rows, err := s.DB.Query(
 		`SELECT id, batch_id, version, status, sealed, payload, created_at
@@ -93,7 +91,7 @@ func (s *Store) ListPublishedSnapshots(batchID int64) ([]*model.SeasonalSnapshot
 	if err != nil {
 		return nil, fmt.Errorf("store: list published snapshots: %w", err)
 	}
-	leakedPublishedRows = rows
+	defer rows.Close()
 	var out []*model.SeasonalSnapshot
 	for rows.Next() {
 		snap, err := scanSnapshot(rows)
