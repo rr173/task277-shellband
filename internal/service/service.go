@@ -199,6 +199,9 @@ func (svc *Service) ListCorrections(batchID int64) ([]*model.PositionCorrection,
 // Align 将采样点对齐到生长带并诊断缺口；写回归属、带种类与采样状态。
 // 该操作全局串行，避免并发对齐破坏“一条样本仅归属一条带”的不变量。
 func (svc *Service) Align(batchID int64) (*align.Result, error) {
+	svc.serialMu.Lock()
+	defer svc.serialMu.Unlock()
+
 	bands, err := svc.store.ListBands(batchID)
 	if err != nil {
 		return nil, err
